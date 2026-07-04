@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Black Shield Security</title>
+    <style>
+        :root {
+            --bg: #050508; --panel: #0d0d14; --border: #1e1e2e;
+            --green: #00ff88; --red: #ff3355; --yellow: #ffaa00; --blue: #00aaff;
+            --text: #c8c8d0; --dim: #666680;
+            --glow-green: 0 0 20px rgba(0,255,136,0.4);
+            --glow-red: 0 0 20px rgba(255,51,85,0.5);
+            --glow-blue: 0 0 20px rgba(0,170,255,0.4);
+            --font: 'Courier New', monospace;
+        }
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{
+            background:var(--bg);font-family:var(--font);color:var(--text);
+            min-height:100vh;display:flex;flex-direction:column;align-items:center;
+        }
+        .container{max-width:1300px;margin:0 auto;padding:20px;width:100%}
+        .hero{
+            display:flex;flex-direction:column;align-items:center;justify-content:center;
+            text-align:center;padding:80px 20px;min-height:80vh;
+            background:radial-gradient(circle at 50% 30%,rgba(0,255,136,0.06) 0%,transparent 70%);
+        }
+        .hero h1{font-size:52px;letter-spacing:8px;color:#fff}
+        .hero h1 span{color:var(--green);text-shadow:var(--glow-green)}
+        .hero p{font-size:16px;letter-spacing:3px;color:var(--dim);margin:20px 0 40px}
+        .btn{
+            padding:14px 30px;border-radius:8px;border:2px solid var(--green);
+            background:transparent;color:var(--green);font-family:var(--font);
+            font-size:14px;letter-spacing:3px;cursor:pointer;text-transform:uppercase;
+            transition:all 0.3s
+        }
+        .btn:hover{background:rgba(0,255,136,0.1);box-shadow:var(--glow-green)}
+        .btn:disabled{opacity:0.5;pointer-events:none}
+        .dashboard-section{display:none;padding:20px}
+        .dashboard-section.active{display:block}
+        .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}
+        .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px}
+        .panel-header{display:flex;justify-content:space-between;font-size:13px;letter-spacing:2px;color:#aaa;margin-bottom:14px}
+        .camera-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+        .camera-feed{position:relative;aspect-ratio:16/10;background:#000;border-radius:8px;overflow:hidden;border:2px solid #1a1a28}
+        .camera-feed video{width:100%;height:100%;object-fit:cover}
+        .camera-overlay{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;background:repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 2px, transparent 2px, transparent 4px);}
+        .camera-label{position:absolute;bottom:8px;left:10px;font-size:10px;color:#fff;background:rgba(0,0,0,0.7);padding:3px 8px;border-radius:4px}
+        .camera-dot{position:absolute;top:10px;right:10px;width:10px;height:10px;border-radius:50%}
+        .camera-dot.recording{background:var(--red);box-shadow:var(--glow-red);animation:blink 0.5s infinite}
+        .camera-dot.standby{background:var(--yellow)}
+        @keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+        .sensor-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #1a1a26;font-size:12px}
+        .sensor-value{font-weight:bold}
+        .sensor-value.safe{color:var(--green)}
+        .sensor-value.danger{color:var(--red)}
+        .sensor-value.warn{color:var(--yellow)}
+        .log-area{height:150px;overflow-y:auto;background:#06060c;border-radius:8px;padding:10px;font-size:10px;border:1px solid #1a1a26;line-height:1.8}
+        .log-entry{padding:2px 0}
+        .log-entry.warn{color:var(--yellow)}
+        .log-entry.alert{color:var(--red)}
+        .log-entry.info{color:var(--blue)}
+        .log-entry.ok{color:var(--green)}
+        .alarm-bar{display:none;padding:14px;background:rgba(255,51,85,0.12);border:2px solid var(--red);border-radius:10px;margin-bottom:18px;font-size:14px;letter-spacing:3px;color:var(--red);text-align:center}
+        .alarm-bar.active{display:block}
+        .input-field{padding:10px 15px;background:#0a0a0f;border:2px solid #2a2a3a;border-radius:8px;color:#fff;font-family:var(--font);font-size:12px;width:100%;margin-top:4px}
+        .input-field:focus{border-color:var(--blue);outline:none}
+        .flex-row{display:flex;gap:8px;align-items:center}
+        .small-btn{padding:8px 12px;font-size:10px;letter-spacing:1px}
+    </style>
+    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+</head>
+<body>
+<div class="container">
+    <div class="hero" id="hero">
+        <h1>BLACK<span>SHIELD</span></h1>
+        <p>Профессиональная система видеонаблюдения с записью звука и удалённым доступом с телефона.</p>
+        <button class="btn" id="btnEnterDashboard">▶ ОТКРЫТЬ ПАНЕЛЬ</button>
+    </div>
+
+    <div class="dashboard-section" id="dashboard">
+        <div class="alarm-bar" id="alarmBar">⚠ ТРЕВОГА! ОБНАРУЖЕНО ДВИЖЕНИЕ ⚠</div>
+        <div class="grid">
+            <div class="panel" style="grid-column: span 2;">
+                <div class="panel-header">📹 ВИДЕОНАБЛЮДЕНИЕ <span class="panel-badge badge-active">● LIVE</span></div>
+                <div class="camera-grid">
+                    <div class="camera-feed" id="cam1"><video id="video1" autoplay playsinline muted></video><div class="camera-overlay"></div><div class="camera-label">CAM-01</div><div class="camera-dot recording"></div></div>
+                    <div class="camera-feed" id="cam2"><video id="video2" autoplay playsinline muted></video><div class="camera-overlay"></div><div class="camera-label">CAM-02</div><div class="camera-dot recording"></div></div>
+                    <div class="camera-feed" id="cam3"><video id="video3" autoplay playsinline muted></video><div class="camera-overlay"></div><div class="camera-label">CAM-03</div><div class="camera-dot standby"></div></div>
+                    <div class="camera-feed" id="cam4"><video id="video4" autoplay playsinline muted></video><div class="camera-overlay"></div><div class="camera-label">CAM-04 ▸ УДАЛЁННЫЙ</div><div class="camera-dot recording"></div></div>
+                </div>
+                <div class="btn-row" style="margin-top:12px; display:flex; gap:10px;">
+                    <button class="btn" id="btnRequestCamera">📸 ЗАПРОСИТЬ КАМЕРУ</button>
+                    <button class="btn" id="btnStartRecord" disabled>⏺ ЗАПИСЬ</button>
+                    <button class="btn" id="btnStopRecord" disabled>⏹ СТОП</button>
+                    <button class="btn" onclick="clearMotion()">🔄 СБРОС</button>
+                </div>
+                <div id="recordStatus" style="font-size:10px; color:var(--dim); margin-top:8px;"></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">📡 ДАТЧИКИ</div>
+                <div class="sensor-row"><span>🎯 ДВИЖЕНИЕ</span><span class="sensor-value safe" id="sensorMotion">НЕТ</span></div>
+                <div class="sensor-row"><span>📳 ВИБРАЦИЯ</span><span class="sensor-value safe" id="sensorVibro">0.02 g</span></div>
+                <div class="sensor-row"><span>🔋 БАТАРЕЯ</span><span class="sensor-value safe" id="sensorPower">--%</span></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">🌐 УДАЛЁННЫЙ ДОСТУП <span class="panel-badge badge-idle" id="remoteBadge">ОЖИДАНИЕ</span></div>
+                <div style="font-size:10px; color:var(--dim);">Ваш постоянный ID (оставьте пустым для случайного):</div>
+                <div class="flex-row">
+                    <input class="input-field" id="customPeerId" placeholder="например: mycamera123" style="flex:1">
+                    <button class="btn small-btn" id="btnSetPeerId">УСТАНОВИТЬ</button>
+                </div>
+                <button class="btn" id="btnStartBroadcast" style="width:100%; margin:10px 0;">📡 НАЧАТЬ ТРАНСЛЯЦИЮ</button>
+                <button class="btn" id="btnStopBroadcast" disabled style="width:100%; margin-bottom:15px;">🛑 ОСТАНОВИТЬ</button>
+                <div style="font-size:10px; color:var(--dim);">Ваш текущий ID:</div>
+                <input class="input-field" id="myPeerId" readonly placeholder="не запущена">
+                <button class="btn" onclick="copyPeerId()" id="btnCopyId" disabled style="margin:6px 0;">📋 КОПИРОВАТЬ</button>
+                <div style="border-top:1px solid #1a1a26; margin:10px 0;"></div>
+                <div style="font-size:10px; color:var(--dim);">Подключиться к ID:</div>
+                <input class="input-field" id="remotePeerId" placeholder="Введите ID камеры">
+                <button class="btn" id="btnConnectRemote" style="width:100%; margin-top:6px;">🔗 ПОДКЛЮЧИТЬСЯ</button>
+                <button class="btn" id="btnDisconnectRemote" disabled style="width:100%; margin-top:6px;">❌ ОТКЛЮЧИТЬСЯ</button>
+                <div id="remoteStatus" style="font-size:10px; color:var(--dim); margin-top:8px;"></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">🎛 УПРАВЛЕНИЕ</div>
+                <button class="btn" onclick="armSystem()" style="width:100%; margin-bottom:8px;">✅ НА ОХРАНУ</button>
+                <button class="btn" onclick="disarmSystem()" style="width:100%; margin-bottom:8px;">⚠ СНЯТЬ С ОХРАНЫ</button>
+                <button class="btn" onclick="triggerAlarm()" style="width:100%; margin-bottom:8px;">🔴 ТРЕВОГА</button>
+                <div>РЕЖИМ: <span id="armStatus" style="color:var(--green);">НА ОХРАНЕ</span></div>
+            </div>
+
+            <div class="panel" style="grid-column: span 2;">
+                <div class="panel-header">📋 ЖУРНАЛ</div>
+                <div class="log-area" id="logArea"><div class="log-entry info">[СИСТЕМА] Black Shield v6.1</div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const alarmBar = document.getElementById('alarmBar');
+    const logArea = document.getElementById('logArea');
+    const sensorMotion = document.getElementById('sensorMotion');
+    const sensorVibro = document.getElementById('sensorVibro');
+    const sensorPower = document.getElementById('sensorPower');
+    const btnRequestCamera = document.getElementById('btnRequestCamera');
+    const btnStartRecord = document.getElementById('btnStartRecord');
+    const btnStopRecord = document.getElementById('btnStopRecord');
+    const recordStatus = document.getElementById('recordStatus');
+    const videoElements = [
+        document.getElementById('video1'), document.getElementById('video2'),
+        document.getElementById('video3'), document.getElementById('video4')
+    ];
+    const camFeeds = document.querySelectorAll('.camera-feed');
+    const customPeerIdInput = document.getElementById('customPeerId');
+    const btnSetPeerId = document.getElementById('btnSetPeerId');
+    const btnStartBroadcast = document.getElementById('btnStartBroadcast');
+    const btnStopBroadcast = document.getElementById('btnStopBroadcast');
+    const myPeerIdInput = document.getElementById('myPeerId');
+    const btnCopyId = document.getElementById('btnCopyId');
+    const remotePeerIdInput = document.getElementById('remotePeerId');
+    const btnConnectRemote = document.getElementById('btnConnectRemote');
+    const btnDisconnectRemote = document.getElementById('btnDisconnectRemote');
+    const remoteStatus = document.getElementById('remoteStatus');
+    const remoteBadge = document.getElementById('remoteBadge');
+    const armStatus = document.getElementById('armStatus');
+
+    let isArmed = true, alarmActive = false, stream = null;
+    let motionDetected = false, motionDetectionInterval = null, lastFrameData = null;
+    const MOTION_THRESHOLD = 30;
+    let lastMotionTime = 0;
+    let mediaRecorder = null, recordedChunks = [], isRecording = false;
+    let peer = null, broadcastCall = null, remoteConnection = null, remoteStream = null;
+    let desiredPeerId = ''; // ID, который хочет использовать пользователь
+
+    function addLog(source, message, type = 'info') {
+        const entry = document.createElement('div');
+        entry.className = 'log-entry ' + type;
+        entry.textContent = `[${new Date().toLocaleTimeString('ru-RU')}] [${source}] ${message}`;
+        logArea.appendChild(entry);
+        logArea.scrollTop = logArea.scrollHeight;
+    }
+    window.clearLogs = () => { logArea.innerHTML = ''; addLog('СИСТЕМА', 'Журнал очищен', 'info'); };
+
+    // Камера
+    async function requestCamera() {
+        if (stream) return;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: { width: {ideal:640}, height:{ideal:480}, facingMode:'environment' }, audio: true });
+            videoElements.forEach(v => v.srcObject = stream);
+            btnRequestCamera.textContent = '📸 КАМЕРА АКТИВНА'; btnRequestCamera.disabled = true;
+            btnStartRecord.disabled = false;
+            addLog('КАМЕРА', '✅ Камера и микрофон подключены', 'ok');
+            startMotionDetection();
+        } catch (e) { addLog('КАМЕРА', '❌ ' + e.message, 'alert'); }
+    }
+    btnRequestCamera.addEventListener('click', requestCamera);
+
+    // Запись
+    function startRecording() {
+        if (!stream || isRecording) return;
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8,opus' });
+        recordedChunks = [];
+        mediaRecorder.ondataavailable = e => { if(e.data.size) recordedChunks.push(e.data); };
+        mediaRecorder.onstop = () => {
+            const blob = new Blob(recordedChunks, {type: 'video/webm'});
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+            a.download = 'recording_' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.webm';
+            a.click(); addLog('ЗАПИСЬ', '✅ Файл сохранён', 'ok');
+            isRecording = false; btnStartRecord.disabled = false; btnStopRecord.disabled = true;
+            recordStatus.textContent = '';
+        };
+        mediaRecorder.start(); isRecording = true;
+        btnStartRecord.disabled = true; btnStopRecord.disabled = false;
+        recordStatus.textContent = '● ИДЕТ ЗАПИСЬ...';
+        addLog('ЗАПИСЬ', '⏺ Старт записи видео+звук', 'info');
+    }
+    function stopRecording() {
+        if (mediaRecorder && isRecording) { mediaRecorder.stop(); recordStatus.textContent = 'Сохраняем...'; btnStopRecord.disabled = true; }
+    }
+    btnStartRecord.addEventListener('click', startRecording);
+    btnStopRecord.addEventListener('click', stopRecording);
+
+    // Детекция движения
+    function getFrameData(v) { const c=document.createElement('canvas'); c.width=160; c.height=120; c.getContext('2d').drawImage(v,0,0,160,120); return c.getContext('2d').getImageData(0,0,160,120); }
+    function compareFrames(p,c) { if(!p||!c)return 0; let d=0; for(let i=0;i<p.data.length;i+=4) d+=Math.abs((p.data[i]+p.data[i+1]+p.data[i+2])/3 - (c.data[i]+c.data[i+1]+c.data[i+2])/3); return d/(p.width*p.height); }
+    function motionLoop() {
+        if(!stream || videoElements[0].readyState<2) return;
+        const cur = getFrameData(videoElements[0]);
+        if(lastFrameData) {
+            const avg = compareFrames(lastFrameData, cur);
+            sensorVibro.textContent = avg>5 ? Math.min(avg/20,5).toFixed(2)+' g' : '0.02 g';
+            sensorVibro.className = avg>5 ? 'sensor-value warn' : 'sensor-value safe';
+            if(avg>MOTION_THRESHOLD) { if(!motionDetected){ motionDetected=true; onMotionStart(); } }
+            else if(motionDetected){ motionDetected=false; onMotionEnd(); }
+        }
+        lastFrameData = cur;
+    }
+    function startMotionDetection() { if(!motionDetectionInterval) motionDetectionInterval = setInterval(motionLoop, 500); }
+    function onMotionStart() {
+        sensorMotion.textContent='ОБНАРУЖЕНО!'; sensorMotion.className='sensor-value danger';
+        showMotionBoxes(); addLog('ДВИЖЕНИЕ','⚠ Движение в кадре','warn');
+        if(isArmed && !alarmActive && Date.now()-lastMotionTime>3000) { lastMotionTime=Date.now(); triggerAlarm(true); }
+    }
+    function onMotionEnd() { sensorMotion.textContent='НЕТ'; sensorMotion.className='sensor-value safe'; clearMotionVisuals(); }
+    function showMotionBoxes() { camFeeds.forEach(f=>{ if(!f.querySelector('.motion-box')){ const b=document.createElement('div'); b.className='motion-box'; b.style=`position:absolute; border:2px solid var(--red); top:${20+Math.random()*40}%; left:${15+Math.random()*40}%; width:${40+Math.random()*30}%; height:${25+Math.random()*35}%;`; f.appendChild(b); } }); }
+    function clearMotionVisuals() { document.querySelectorAll('.motion-box').forEach(e=>e.remove()); }
+
+    window.triggerAlarm = function(auto=false) {
+        if(alarmActive) return; alarmActive = true;
+        alarmBar.classList.add('active'); document.body.style.animation='alarmBody 0.3s infinite';
+        addLog('ТРЕВОГА', auto?'🔴 Автотревога!':'🔴 Ручная тревога!','alert');
+    };
+    function resetAlarm() { alarmActive=false; alarmBar.classList.remove('active'); document.body.style.animation=''; }
+
+    window.armSystem = () => { isArmed=true; armStatus.textContent='НА ОХРАНЕ'; armStatus.style.color='var(--green)'; };
+    window.disarmSystem = () => { isArmed=false; armStatus.textContent='СНЯТО'; armStatus.style.color='var(--yellow)'; };
+    window.runDiagnostic = () => { addLog('ДИАГНОСТИКА','🔍 Запущена','info'); setTimeout(()=>addLog('ДИАГНОСТИКА','✅ ОК','ok'),2000); };
+
+    if('getBattery' in navigator) navigator.getBattery().then(b=>{
+        const upd = ()=>{ const l=Math.round(b.level*100); sensorPower.textContent=l+'%'; sensorPower.className=l>20?'sensor-value safe':'sensor-value danger'; };
+        upd(); b.addEventListener('levelchange',upd); b.addEventListener('chargingchange',upd);
+    });
+
+    // ========== УДАЛЁННЫЙ ДОСТУП С НАСТРАИВАЕМЫМ ID ==========
+    btnSetPeerId.addEventListener('click', () => {
+        const newId = customPeerIdInput.value.trim();
+        if (newId && !/^[a-zA-Z0-9_-]+$/.test(newId)) {
+            addLog('УДАЛЁННЫЙ', 'ID может содержать только латинские буквы, цифры, _ и -', 'warn');
+            return;
+        }
+        desiredPeerId = newId;
+        if (newId) {
+            addLog('УДАЛЁННЫЙ', `Постоянный ID установлен: ${newId}. Нажмите "Начать трансляцию".`, 'ok');
+            myPeerIdInput.value = newId;
+        } else {
+            addLog('УДАЛЁННЫЙ', 'Будет использован случайный ID.', 'info');
+            myPeerIdInput.value = '';
+        }
+    });
+
+    async function startBroadcastWithId() {
+        if(!stream) return addLog('УДАЛЁННЫЙ','Сначала включите камеру','warn');
+        if(peer && !peer.destroyed) {
+            addLog('УДАЛЁННЫЙ','Трансляция уже активна','info');
+            return;
+        }
+        const options = {
+            host: '0.peerjs.com',
+            port: 443,
+            secure: true,
+            path: '/'
+        };
+        // Если задан желаемый ID, используем его
+        if (desiredPeerId) {
+            peer = new Peer(desiredPeerId, options);
+        } else {
+            peer = new Peer(options);
+        }
+        peer.on('open', id => {
+            myPeerIdInput.value = id;
+            btnCopyId.disabled = false;
+            btnStartBroadcast.disabled = true;
+            btnStopBroadcast.disabled = false;
+            remoteBadge.textContent = 'ТРАНСЛЯЦИЯ';
+            remoteBadge.className = 'panel-badge badge-active';
+            remoteStatus.textContent = 'Трансляция активна. Делитесь ID.';
+            addLog('УДАЛЁННЫЙ', '📡 Трансляция ID: ' + id, 'ok');
+        });
+        peer.on('call', call => {
+            call.answer(stream);
+            broadcastCall = call;
+            addLog('УДАЛЁННЫЙ', '📥 Входящее подключение', 'info');
+        });
+        peer.on('error', err => {
+            addLog('УДАЛЁННЫЙ', '❌ Ошибка PeerJS: ' + err.message, 'alert');
+            // Если ошибка "ID уже используется", сбрасываем и пробуем случайный
+            if (err.type === 'unavailable-id' && desiredPeerId) {
+                addLog('УДАЛЁННЫЙ', 'Этот ID уже занят. Попробуйте другой.', 'warn');
+                peer.destroy();
+                peer = null;
+                btnStartBroadcast.disabled = false;
+                btnStopBroadcast.disabled = true;
+            }
+        });
+        peer.on('disconnected', () => {
+            addLog('УДАЛЁННЫЙ', 'Сигнальный сервер отключился. Попытка переподключения...', 'warn');
+        });
+    }
+
+    btnStartBroadcast.addEventListener('click', startBroadcastWithId);
+    btnStopBroadcast.addEventListener('click', ()=>{
+        if(broadcastCall) broadcastCall.close();
+        if(peer && !peer.destroyed) peer.destroy();
+        peer = null; myPeerIdInput.value = ''; btnCopyId.disabled = true;
+        btnStartBroadcast.disabled = false; btnStopBroadcast.disabled = true;
+        remoteBadge.textContent = 'ОЖИДАНИЕ'; remoteBadge.className = 'panel-badge badge-idle';
+        remoteStatus.textContent = 'Трансляция остановлена';
+        addLog('УДАЛЁННЫЙ', 'Трансляция остановлена', 'info');
+    });
+    window.copyPeerId = ()=>{ myPeerIdInput.select(); document.execCommand('copy'); addLog('УДАЛЁННЫЙ','ID скопирован','info'); };
+
+    btnConnectRemote.addEventListener('click', ()=>{
+        const remoteId = remotePeerIdInput.value.trim();
+        if(!remoteId) return addLog('УДАЛЁННЫЙ','Введите ID','warn');
+        if(!peer || peer.destroyed) {
+            // Для подключения создаём временный peer (можно без ID)
+            peer = new Peer({
+                host: '0.peerjs.com',
+                port: 443,
+                secure: true,
+                path: '/'
+            });
+        }
+        const call = peer.call(remoteId, new MediaStream());
+        call.on('stream', remoteStream => {
+            videoElements[3].srcObject = remoteStream;
+            addLog('УДАЛЁННЫЙ','📺 Поток получен от '+remoteId,'ok');
+            remoteStatus.textContent = 'Подключено к '+remoteId;
+            remoteBadge.textContent = 'ПОДКЛЮЧЕНО'; remoteBadge.className = 'panel-badge badge-active';
+            btnConnectRemote.disabled = true; btnDisconnectRemote.disabled = false;
+        });
+        call.on('close', ()=>{ cleanupRemote(); });
+        call.on('error', err => {
+            addLog('УДАЛЁННЫЙ', '❌ Ошибка соединения: ' + err.message, 'alert');
+            cleanupRemote();
+        });
+        remoteConnection = call;
+    });
+    btnDisconnectRemote.addEventListener('click', ()=>{
+        if(remoteConnection) remoteConnection.close();
+        cleanupRemote();
+    });
+    function cleanupRemote() {
+        if(remoteConnection) remoteConnection.close();
+        remoteConnection = null;
+        if(remoteStream) remoteStream.getTracks().forEach(t => t.stop());
+        videoElements[3].srcObject = stream || null;
+        btnConnectRemote.disabled = false; btnDisconnectRemote.disabled = true;
+        remoteBadge.textContent = 'ОЖИДАНИЕ'; remoteBadge.className = 'panel-badge badge-idle';
+        remoteStatus.textContent = 'Отключено';
+    }
+
+    window.clearMotion = () => { motionDetected=false; sensorMotion.textContent='НЕТ'; sensorMotion.className='sensor-value safe'; clearMotionVisuals(); if(alarmActive) resetAlarm(); };
+
+    document.getElementById('btnEnterDashboard').addEventListener('click', ()=>{
+        document.getElementById('hero').style.display = 'none';
+        document.getElementById('dashboard').classList.add('active');
+        window.scrollTo(0,0);
+    });
+    window.addEventListener('beforeunload', ()=>{
+        stopRecording();
+        if(stream) stream.getTracks().forEach(t=>t.stop());
+        if(peer) peer.destroy();
+    });
+    addLog('СИСТЕМА','Black Shield v6.1 готов. Настройте ID для трансляции.','ok');
+})();
+</script>
+<style>@keyframes alarmBody{0%,100%{background:#050508}50%{background:#0f0505}}</style>
+</body>
+</html>
